@@ -6,6 +6,8 @@ import {
   Users,
   LogOut,
   ShieldCheck,
+  UserCircle,
+  BarChart3,
 } from 'lucide-react'
 import { useAuthStore } from '../../store/auth.store'
 
@@ -13,7 +15,9 @@ const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'user', 'auditor'] },
   { to: '/documents', label: 'Documentos', icon: FileText, roles: ['admin', 'user'] },
   { to: '/audit', label: 'Auditoría', icon: Shield, roles: ['admin', 'auditor'] },
+  { to: '/audit/reports', label: 'Reportes', icon: BarChart3, roles: ['admin', 'auditor'] },
   { to: '/users', label: 'Usuarios', icon: Users, roles: ['admin'] },
+  { to: '/profile', label: 'Mi perfil', icon: UserCircle, roles: ['admin', 'user', 'auditor'] },
 ]
 
 export function Sidebar() {
@@ -36,7 +40,7 @@ export function Sidebar() {
         <span className="text-lg font-bold tracking-tight">SecureDocs</span>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {filtered.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}

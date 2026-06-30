@@ -56,4 +56,59 @@ export class AuditService {
       },
     });
   }
+
+  async getSummary(from?: Date, to?: Date) {
+    const dateFilter =
+      from || to
+        ? {
+            createdAt: {
+              ...(from && { gte: from }),
+              ...(to && { lte: to }),
+            },
+          }
+        : {};
+
+    const logs = await this.prisma.auditLog.findMany({
+      where: dateFilter,
+      select: { action: true, createdAt: true },
+    });
+
+    const byAction: Record<string, number> = {};
+    const byDay: Record<string, number> = {};
+
+    for (const log of logs) {
+      byAction[log.action] = (byAction[log.action] ?? 0) + 1;
+      const day = log.createdAt.toISOString().slice(0, 10);
+      byDay[day] = (byDay[day] ?? 0) + 1;
+    }
+
+    return {
+      total: logs.length,
+      byAction,
+      byDay: Object.entries(byDay)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, count]) => ({ date, count })),
+    };
+  }
+
+  async getByDocument(documentId: string) {
+    return this.prisma.auditLog.findMany({
+      where: { entityType: 'Document', entityId: documentId },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        actor: { select: { id: true, email: true, name: true } },
+      },
+    });
+  }
+
+  async getByUser(targetUserId: string) {
+    return this.prisma.auditLog.findMany({
+      where: { actorId: targetUserId },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: {
+        actor: { select: { id: true, email: true, name: true } },
+      },
+    });
+  }
 }

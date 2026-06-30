@@ -23,16 +23,81 @@ export class DocumentsService {
   async upload(
     file: Express.Multer.File,
     userId: string,
+    folderId?: string,
     ip?: string,
   ) {
-    const fileBuffer = file.buffer;
+    if (folderId) {
+      const folder = await this.prisma.folder.findUnique({
+        where: { id: folderId },
+      });
+      if (!folder) throw new NotFoundException('Carpeta no encontrada');
+      if (folder.ownerId !== userId)
+        throw new ForbiddenException('Sin acceso a esa carpeta');
+    }
 
+    const fileBuffer = file.buffer;
     const sha256 = this.crypto.sha256(fileBuffer);
     const { encrypted, iv, authTag } = this.crypto.encrypt(fileBuffer);
-
     const storageKey = `docs/${uuidv4()}`;
 
     await this.storage.putObject(storageKey, encrypted);
+
+    // Check if a document with same name exists for versioning
+    const existing = await this.prisma.document.findFirst({
+      where: { ownerId: userId, originalName: file.originalname, status: 'active' },
+      include: { versions: true },
+    });
+
+    if (existing) {
+      // Save current content as a new version before updating
+      const nextVersion = existing.versions.length + 1;
+      await this.prisma.documentVersion.create({
+        data: {
+          documentId: existing.id,
+          versionNumber: nextVersion,
+          originalName: existing.originalName,
+          mimeType: existing.mimeType,
+          size: existing.size,
+          sha256: existing.sha256,
+          storageKey: existing.storageKey,
+          encryptionIv: existing.encryptionIv,
+          encryptionAuthTag: existing.encryptionAuthTag,
+        },
+      });
+
+      const document = await this.prisma.document.update({
+        where: { id: existing.id },
+        data: {
+          mimeType: file.mimetype,
+          size: file.size,
+          sha256,
+          storageKey,
+          encryptionIv: iv,
+          encryptionAuthTag: authTag,
+          ...(folderId !== undefined ? { folderId } : {}),
+        },
+      });
+
+      await this.audit.log({
+        actorId: userId,
+        action: 'DOCUMENT_VERSION_CREATED',
+        entityType: 'Document',
+        entityId: document.id,
+        ipAddress: ip,
+        metadata: { originalName: file.originalname, version: nextVersion + 1 },
+      });
+
+      return {
+        id: document.id,
+        originalName: document.originalName,
+        mimeType: document.mimeType,
+        size: document.size,
+        sha256: document.sha256,
+        createdAt: document.createdAt,
+        newVersion: true,
+        versionNumber: nextVersion + 1,
+      };
+    }
 
     const document = await this.prisma.document.create({
       data: {
@@ -44,15 +109,12 @@ export class DocumentsService {
         storageKey,
         encryptionIv: iv,
         encryptionAuthTag: authTag,
+        folderId: folderId ?? null,
       },
     });
 
     await this.prisma.documentPermission.create({
-      data: {
-        documentId: document.id,
-        userId,
-        permission: 'owner',
-      },
+      data: { documentId: document.id, userId, permission: 'owner' },
     });
 
     await this.audit.log({
@@ -61,11 +123,7 @@ export class DocumentsService {
       entityType: 'Document',
       entityId: document.id,
       ipAddress: ip,
-      metadata: {
-        originalName: file.originalname,
-        size: file.size,
-        sha256,
-      },
+      metadata: { originalName: file.originalname, size: file.size, sha256 },
     });
 
     return {
@@ -80,11 +138,7 @@ export class DocumentsService {
 
   async download(documentId: string, userId: string, ip?: string) {
     const permission = await this.prisma.documentPermission.findFirst({
-      where: {
-        documentId,
-        userId,
-        permission: { in: ['owner', 'read'] },
-      },
+      where: { documentId, userId, permission: { in: ['owner', 'read'] } },
     });
 
     if (!permission) {
@@ -128,6 +182,174 @@ export class DocumentsService {
     };
   }
 
+  async downloadVersion(documentId: string, versionId: string, userId: string, ip?: string) {
+    const permission = await this.prisma.documentPermission.findFirst({
+      where: { documentId, userId, permission: { in: ['owner', 'read'] } },
+    });
+
+    if (!permission) {
+      await this.audit.log({
+        actorId: userId,
+        action: 'DOCUMENT_ACCESS_DENIED',
+        entityType: 'Document',
+        entityId: documentId,
+        ipAddress: ip,
+      });
+      throw new ForbiddenException('No tienes permiso para acceder a este documento');
+    }
+
+    const version = await this.prisma.documentVersion.findFirst({
+      where: { id: versionId, documentId },
+    });
+
+    if (!version) throw new NotFoundException('Versión no encontrada');
+
+    const encryptedBuffer = await this.storage.getObject(version.storageKey);
+    const decrypted = this.crypto.decrypt(
+      encryptedBuffer,
+      version.encryptionIv,
+      version.encryptionAuthTag,
+    );
+
+    return {
+      buffer: decrypted,
+      originalName: version.originalName,
+      mimeType: version.mimeType,
+    };
+  }
+
+  async getVersions(documentId: string, userId: string) {
+    const permission = await this.prisma.documentPermission.findFirst({
+      where: { documentId, userId, permission: { in: ['owner', 'read'] } },
+    });
+    if (!permission) throw new ForbiddenException('Sin acceso');
+
+    return this.prisma.documentVersion.findMany({
+      where: { documentId },
+      orderBy: { versionNumber: 'desc' },
+      select: {
+        id: true,
+        versionNumber: true,
+        originalName: true,
+        mimeType: true,
+        size: true,
+        sha256: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  async softDelete(documentId: string, userId: string, ip?: string) {
+    const permission = await this.prisma.documentPermission.findFirst({
+      where: { documentId, userId, permission: 'owner' },
+    });
+    if (!permission) throw new ForbiddenException('Solo el propietario puede eliminar este documento');
+
+    const document = await this.prisma.document.findUnique({
+      where: { id: documentId },
+    });
+    if (!document || document.status === 'deleted') {
+      throw new NotFoundException('Documento no encontrado');
+    }
+
+    await this.prisma.document.update({
+      where: { id: documentId },
+      data: { status: 'deleted' },
+    });
+
+    await this.audit.log({
+      actorId: userId,
+      action: 'DOCUMENT_DELETED',
+      entityType: 'Document',
+      entityId: documentId,
+      ipAddress: ip,
+      metadata: { originalName: document.originalName },
+    });
+
+    return { message: 'Documento eliminado correctamente' };
+  }
+
+  async findTrash(userId: string) {
+    const permissions = await this.prisma.documentPermission.findMany({
+      where: { userId, permission: 'owner' },
+      include: {
+        document: {
+          select: {
+            id: true,
+            originalName: true,
+            mimeType: true,
+            size: true,
+            status: true,
+            updatedAt: true,
+          },
+        },
+      },
+    });
+
+    return permissions
+      .filter((p) => p.document.status === 'deleted')
+      .map((p) => p.document);
+  }
+
+  async restore(documentId: string, userId: string, ip?: string) {
+    const permission = await this.prisma.documentPermission.findFirst({
+      where: { documentId, userId, permission: 'owner' },
+    });
+    if (!permission) throw new ForbiddenException('Solo el propietario puede restaurar este documento');
+
+    const document = await this.prisma.document.findUnique({
+      where: { id: documentId },
+    });
+    if (!document || document.status !== 'deleted') {
+      throw new NotFoundException('Documento eliminado no encontrado');
+    }
+
+    await this.prisma.document.update({
+      where: { id: documentId },
+      data: { status: 'active' },
+    });
+
+    await this.audit.log({
+      actorId: userId,
+      action: 'DOCUMENT_RESTORED',
+      entityType: 'Document',
+      entityId: documentId,
+      ipAddress: ip,
+      metadata: { originalName: document.originalName },
+    });
+
+    return { message: 'Documento restaurado correctamente' };
+  }
+
+  async moveToFolder(documentId: string, userId: string, folderId: string | null, ip?: string) {
+    const permission = await this.prisma.documentPermission.findFirst({
+      where: { documentId, userId, permission: 'owner' },
+    });
+    if (!permission) throw new ForbiddenException('Solo el propietario puede mover este documento');
+
+    if (folderId) {
+      const folder = await this.prisma.folder.findUnique({ where: { id: folderId } });
+      if (!folder) throw new NotFoundException('Carpeta no encontrada');
+      if (folder.ownerId !== userId) throw new ForbiddenException('Sin acceso a esa carpeta');
+    }
+
+    const document = await this.prisma.document.update({
+      where: { id: documentId },
+      data: { folderId: folderId ?? null },
+    });
+
+    await this.audit.log({
+      actorId: userId,
+      action: 'DOCUMENT_MOVED',
+      entityType: 'Document',
+      entityId: documentId,
+      ipAddress: ip,
+      metadata: { folderId },
+    });
+
+    return { id: document.id, folderId: document.folderId };
+  }
+
   async shareDocument(documentId: string, ownerUserId: string, targetEmail: string, ip?: string) {
     const ownerPermission = await this.prisma.documentPermission.findFirst({
       where: { documentId, userId: ownerUserId, permission: 'owner' },
@@ -136,9 +358,7 @@ export class DocumentsService {
       throw new ForbiddenException('Solo el propietario puede compartir este documento');
     }
 
-    const document = await this.prisma.document.findUnique({
-      where: { id: documentId },
-    });
+    const document = await this.prisma.document.findUnique({ where: { id: documentId } });
     if (!document || document.status === 'deleted') {
       throw new NotFoundException('Documento no encontrado');
     }
@@ -183,11 +403,7 @@ export class DocumentsService {
 
   async getPermissions(documentId: string, requestingUserId: string) {
     const ownerPermission = await this.prisma.documentPermission.findFirst({
-      where: {
-        documentId,
-        userId: requestingUserId,
-        permission: { in: ['owner'] },
-      },
+      where: { documentId, userId: requestingUserId, permission: { in: ['owner'] } },
     });
     if (!ownerPermission) {
       throw new ForbiddenException('Solo el propietario puede ver los permisos de este documento');
@@ -238,7 +454,7 @@ export class DocumentsService {
     return { message: `Acceso de ${existing.user.name} revocado correctamente` };
   }
 
-  async findAllForUser(userId: string) {
+  async findAllForUser(userId: string, folderId?: string | null) {
     const permissions = await this.prisma.documentPermission.findMany({
       where: { userId },
       include: {
@@ -250,8 +466,12 @@ export class DocumentsService {
             size: true,
             sha256: true,
             status: true,
+            folderId: true,
             createdAt: true,
+            updatedAt: true,
             owner: { select: { id: true, email: true, name: true } },
+            folder: { select: { id: true, name: true } },
+            versions: { select: { id: true, versionNumber: true, createdAt: true }, orderBy: { versionNumber: 'desc' } },
           },
         },
       },
@@ -259,10 +479,15 @@ export class DocumentsService {
     });
 
     return permissions
-      .filter((p) => p.document.status === 'active')
+      .filter((p) => {
+        if (p.document.status !== 'active') return false;
+        if (folderId !== undefined) return p.document.folderId === folderId;
+        return true;
+      })
       .map((p) => ({
         ...p.document,
         permission: p.permission,
+        versionCount: p.document.versions.length + 1,
       }));
   }
 }

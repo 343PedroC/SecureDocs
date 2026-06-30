@@ -6,7 +6,9 @@ import { Register } from './pages/Register'
 import { Dashboard } from './pages/Dashboard'
 import { Documents } from './pages/Documents'
 import { Audit } from './pages/Audit'
+import { AuditReports } from './pages/AuditReports'
 import { Users } from './pages/Users'
+import { Profile } from './pages/Profile'
 import { NotFound } from './pages/NotFound'
 
 export default function App() {
@@ -21,7 +23,9 @@ export default function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/documents" element={<Documents />} />
             <Route path="/audit" element={<Audit />} />
+            <Route path="/audit/reports" element={<AuditReports />} />
             <Route path="/users" element={<Users />} />
+            <Route path="/profile" element={<Profile />} />
           </Route>
         </Route>
 

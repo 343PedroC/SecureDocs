@@ -31,6 +31,17 @@ enum AuditAction {
   DOCUMENT_ACCESS_DENIED
   DOCUMENT_SHARED
   DOCUMENT_UNSHARED
+  DOCUMENT_DELETED
+  DOCUMENT_RESTORED
+  DOCUMENT_VERSION_CREATED
+  DOCUMENT_MOVED
+  FOLDER_CREATED
+  FOLDER_DELETED
+  USER_ROLE_CHANGED
+  USER_DISABLED
+  USER_ENABLED
+  PROFILE_UPDATED
+  PASSWORD_CHANGED
 }
 
 model User {
@@ -39,12 +50,27 @@ model User {
   passwordHash String
   name         String
   role         Role     @default(user)
+  isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   documents   Document[]
   permissions DocumentPermission[]
   auditLogs   AuditLog[]
+  folders     Folder[]
+}
+
+model Folder {
+  id        String   @id @default(uuid())
+  name      String
+  ownerId   String
+  parentId  String?
+  createdAt DateTime @default(now())
+
+  owner     User       @relation(fields: [ownerId], references: [id])
+  parent    Folder?    @relation("FolderChildren", fields: [parentId], references: [id])
+  children  Folder[]   @relation("FolderChildren")
+  documents Document[]
 }
 
 model Document {
@@ -58,11 +84,30 @@ model Document {
   encryptionIv      String
   encryptionAuthTag String
   status            DocumentStatus @default(active)
+  folderId          String?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
   owner       User                 @relation(fields: [ownerId], references: [id])
+  folder      Folder?              @relation(fields: [folderId], references: [id])
   permissions DocumentPermission[]
+  versions    DocumentVersion[]
+}
+
+model DocumentVersion {
+  id                String   @id @default(uuid())
+  documentId        String
+  versionNumber     Int
+  originalName      String
+  mimeType          String
+  size              Int
+  sha256            String
+  storageKey        String   @unique
+  encryptionIv      String
+  encryptionAuthTag String
+  createdAt         DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id])
 }
 
 model DocumentPermission {
