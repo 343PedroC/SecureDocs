@@ -1,0 +1,35 @@
+import { create } from 'zustand'
+
+export type Role = 'admin' | 'user' | 'auditor'
+
+export interface AuthUser {
+  id: string
+  email: string
+  name: string
+  role: Role
+}
+
+interface AuthState {
+  user: AuthUser | null
+  token: string | null
+  setAuth: (user: AuthUser, token: string) => void
+  logout: () => void
+  isAuthenticated: () => boolean
+}
+
+export const useAuthStore = create<AuthState>((set, get) => ({
+  user: null,
+  token: localStorage.getItem('token'),
+
+  setAuth: (user, token) => {
+    localStorage.setItem('token', token)
+    set({ user, token })
+  },
+
+  logout: () => {
+    localStorage.removeItem('token')
+    set({ user: null, token: null })
+  },
+
+  isAuthenticated: () => Boolean(get().token),
+}))

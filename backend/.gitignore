@@ -1,0 +1,23 @@
+# Dependencias
+node_modules/
+
+# Compilado
+dist/
+
+# Variables de entorno (NUNCA subir al repositorio)
+.env
+
+# Prisma
+prisma/migrations/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

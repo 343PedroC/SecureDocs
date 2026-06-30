@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  user
+  auditor
+}
+
+enum Permission {
+  owner
+  read
+}
+
+enum DocumentStatus {
+  active
+  deleted
+}
+
+enum AuditAction {
+  USER_REGISTERED
+  USER_LOGGED_IN
+  DOCUMENT_UPLOADED
+  DOCUMENT_DOWNLOADED
+  DOCUMENT_ACCESS_DENIED
+  DOCUMENT_SHARED
+  DOCUMENT_UNSHARED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(user)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  documents   Document[]
+  permissions DocumentPermission[]
+  auditLogs   AuditLog[]
+}
+
+model Document {
+  id                String         @id @default(uuid())
+  ownerId           String
+  originalName      String
+  mimeType          String
+  size              Int
+  sha256            String
+  storageKey        String         @unique
+  encryptionIv      String
+  encryptionAuthTag String
+  status            DocumentStatus @default(active)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  owner       User                 @relation(fields: [ownerId], references: [id])
+  permissions DocumentPermission[]
+}
+
+model DocumentPermission {
+  id         String     @id @default(uuid())
+  documentId String
+  userId     String
+  permission Permission
+  createdAt  DateTime   @default(now())
+
+  document Document @relation(fields: [documentId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@unique([documentId, userId])
+}
+
+model AuditLog {
+  id         String      @id @default(uuid())
+  actorId    String?
+  action     AuditAction
+  entityType String?
+  entityId   String?
+  ipAddress  String?
+  metadata   Json?
+  createdAt  DateTime    @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id])
+}
