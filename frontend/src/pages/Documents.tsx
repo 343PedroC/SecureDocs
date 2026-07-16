@@ -10,21 +10,13 @@ import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
 import { Alert } from '../components/ui/Alert'
 import { ShareModal } from '../components/documents/ShareModal'
+import { VersionHistory } from '../components/documents/VersionHistory'
 
 interface FolderItem {
   id: string
   name: string
   parentId: string | null
   children: { id: string; name: string }[]
-}
-
-interface DocVersion {
-  id: string
-  versionNumber: number
-  originalName: string
-  mimeType: string
-  size: number
-  createdAt: string
 }
 
 interface Document {
@@ -68,8 +60,6 @@ export function Documents() {
   const [showNewFolder, setShowNewFolder] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
   const [versionsDoc, setVersionsDoc] = useState<Document | null>(null)
-  const [versions, setVersions] = useState<DocVersion[]>([])
-  const [loadingVersions, setLoadingVersions] = useState(false)
   const [moveDoc, setMoveDoc] = useState<Document | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -202,32 +192,6 @@ export function Documents() {
 
   const handleLoadVersions = async (doc: Document) => {
     setVersionsDoc(doc)
-    setLoadingVersions(true)
-    try {
-      const res = await api.get(`/documents/${doc.id}/versions`)
-      setVersions(res.data)
-    } catch {
-      setVersions([])
-    } finally {
-      setLoadingVersions(false)
-    }
-  }
-
-  const handleDownloadVersion = async (doc: Document, version: DocVersion) => {
-    try {
-      const res = await api.get(
-        `/documents/${doc.id}/versions/${version.id}/download`,
-        { responseType: 'blob' },
-      )
-      const url = URL.createObjectURL(new Blob([res.data], { type: version.mimeType }))
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `v${version.versionNumber}_${version.originalName}`
-      a.click()
-      URL.revokeObjectURL(url)
-    } catch {
-      setError('Error al descargar la versión.')
-    }
   }
 
   const handleMove = async (doc: Document, folderId: string | null) => {
@@ -340,10 +304,10 @@ export function Documents() {
 
         {versionsDoc && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 sticky top-0 bg-white">
                 <div>
-                  <h2 className="text-base font-semibold text-gray-900">Versiones anteriores</h2>
+                  <h2 className="text-base font-semibold text-gray-900">Versiones cifradas</h2>
                   <p className="text-xs text-gray-500 truncate">{versionsDoc.originalName}</p>
                 </div>
                 <button onClick={() => setVersionsDoc(null)} className="rounded p-1 hover:bg-gray-100">
@@ -351,33 +315,7 @@ export function Documents() {
                 </button>
               </div>
               <div className="px-6 py-4">
-                {loadingVersions ? (
-                  <div className="text-center py-6 text-gray-400">
-                    <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-                  </div>
-                ) : versions.length === 0 ? (
-                  <p className="text-sm text-gray-500 text-center py-6">Sin versiones anteriores</p>
-                ) : (
-                  <ul className="divide-y divide-gray-100">
-                    {versions.map((v) => (
-                      <li key={v.id} className="flex items-center justify-between py-3">
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">Versión {v.versionNumber}</p>
-                          <p className="text-xs text-gray-400">
-                            {formatBytes(v.size)} · {new Date(v.createdAt).toLocaleDateString()}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => handleDownloadVersion(versionsDoc, v)}
-                          className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800"
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          Descargar
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <VersionHistory documentId={versionsDoc.id} documentName={versionsDoc.originalName} />
               </div>
             </div>
           </div>

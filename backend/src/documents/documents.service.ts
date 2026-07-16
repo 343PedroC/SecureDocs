@@ -235,6 +235,9 @@ export class DocumentsService {
         size: true,
         sha256: true,
         createdAt: true,
+        encryptionIv: true,
+        encryptionAuthTag: true,
+        storageKey: true,
       },
     });
   }

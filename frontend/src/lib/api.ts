@@ -20,3 +20,31 @@ api.interceptors.response.use(
     return Promise.reject(err)
   },
 )
+
+// Document version types
+export interface EncryptedVersion {
+  id: string
+  versionNumber: number
+  originalName: string
+  mimeType: string
+  size: number
+  sha256: string
+  createdAt: string
+  encryptionIv: string
+  encryptionAuthTag: string
+  storageKey: string
+}
+
+// Document version APIs
+export const documentVersionAPI = {
+  getVersions: (documentId: string) =>
+    api.get<EncryptedVersion[]>(`/documents/${documentId}/versions`),
+
+  downloadVersion: (documentId: string, versionId: string) =>
+    api.get(`/documents/${documentId}/versions/${versionId}/download`, {
+      responseType: 'blob',
+    }),
+
+  getVersionMetadata: (documentId: string) =>
+    api.get<EncryptedVersion[]>(`/documents/${documentId}/versions`),
+}
