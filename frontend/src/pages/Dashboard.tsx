@@ -1,159 +1,240 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { FileText, Shield, Users, Upload } from 'lucide-react'
-import { api } from '../lib/api'
+import { Link, useNavigate } from 'react-router-dom'
+import {
+  FolderLock,
+  GraduationCap,
+  BellRing,
+  UserPlus,
+  ArrowRight,
+} from 'lucide-react'
+import { casesAPI, draftsAPI, proceedingsAPI, admissionsAPI, type Expediente, type AlertaTermino } from '../lib/api'
 import { useAuthStore } from '../store/auth.store'
-
-interface Document {
-  id: string
-  originalName: string
-  size: number
-  createdAt: string
-}
-
-interface AuditLog {
-  id: string
-  action: string
-  createdAt: string
-  actor?: { name: string; email: string }
-}
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
+import { Badge } from '../components/ui/Badge'
 
 export function Dashboard() {
   const user = useAuthStore((s) => s.user)
-  const [docs, setDocs] = useState<Document[]>([])
-  const [logs, setLogs] = useState<AuditLog[]>([])
+  const navigate = useNavigate()
+
+  const [cases, setCases] = useState<Expediente[]>([])
+  const [pendingDraftsCount, setPendingDraftsCount] = useState(0)
+  const [alerts, setAlerts] = useState<AlertaTermino[]>([])
+  const [turnosCount, setTurnosCount] = useState(0)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (user?.role !== 'auditor') {
-      api.get('/documents').then((r) => setDocs(r.data)).catch(() => {})
+    async function loadDashboardData() {
+      try {
+        setLoading(true)
+        const [casesRes, alertsRes] = await Promise.all([
+          casesAPI.getCases(),
+          proceedingsAPI.getAlerts().catch(() => ({ data: [] })),
+        ])
+        setCases(casesRes.data)
+        setAlerts(alertsRes.data)
+
+        if (user?.role === 'DOCENTE_SUPERVISOR' || user?.role === 'DIRECTOR' || user?.role === 'admin') {
+          const draftsRes = await draftsAPI.getPendingReview().catch(() => ({ data: [] }))
+          setPendingDraftsCount(draftsRes.data.length)
+        }
+
+        if (user?.role === 'ADMINISTRATIVO' || user?.role === 'DIRECTOR' || user?.role === 'admin') {
+          const turnosRes = await admissionsAPI.getTodayTurnos().catch(() => ({ data: [] }))
+          setTurnosCount(turnosRes.data.length)
+        }
+      } catch {
+        // ignore
+      } finally {
+        setLoading(false)
+      }
     }
-    if (user?.role === 'admin' || user?.role === 'auditor') {
-      api.get('/audit?limit=5').then((r) => setLogs(r.data.slice(0, 5))).catch(() => {})
-    }
+    loadDashboardData()
   }, [user])
 
-  const cards = [
-    {
-      title: 'Mis documentos',
-      value: docs.length,
-      icon: FileText,
-      color: 'text-indigo-600',
-      bg: 'bg-indigo-50',
-      show: user?.role !== 'auditor',
-      href: '/documents',
-    },
-    {
-      title: 'Auditoría',
-      value: logs.length > 0 ? 'Activa' : '—',
-      icon: Shield,
-      color: 'text-emerald-600',
-      bg: 'bg-emerald-50',
-      show: user?.role === 'admin' || user?.role === 'auditor',
-      href: '/audit',
-    },
-    {
-      title: 'Usuarios',
-      value: '—',
-      icon: Users,
-      color: 'text-violet-600',
-      bg: 'bg-violet-50',
-      show: user?.role === 'admin',
-      href: '/users',
-    },
-  ].filter((c) => c.show)
+  const criticalAlertsCount = alerts.filter(
+    (a) => a.nivelAlerta === 'VENCIDO' || a.nivelAlerta === 'ALERTA_1_DIA',
+  ).length
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">
-          Bienvenido, {user?.name}
+          Bienvenido(a), {user?.name}
         </h1>
         <p className="text-gray-500 text-sm mt-1">
-          Plataforma de gestión segura de documentos confidenciales
+          Plataforma de Gestión Integral de Expedientes Jurídicos • Consultorio Jurídico Universitario
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {cards.map((card) => (
+      {/* Tarjetas Principales según Rol */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Link
+          to="/cases"
+          className="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow"
+        >
+          <div className="rounded-xl p-3 bg-indigo-50 text-indigo-600">
+            <FolderLock className="h-6 w-6" />
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide">
+              {user?.role === 'PASANTE' ? 'Mis Expedientes' : 'Expedientes Activos'}
+            </p>
+            <p className="text-2xl font-bold text-gray-900">{cases.length}</p>
+          </div>
+        </Link>
+
+        {(user?.role === 'DOCENTE_SUPERVISOR' || user?.role === 'DIRECTOR' || user?.role === 'admin') && (
           <Link
-            key={card.title}
-            to={card.href}
+            to="/supervision"
             className="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow"
           >
-            <div className={`rounded-xl p-3 ${card.bg}`}>
-              <card.icon className={`h-6 w-6 ${card.color}`} />
+            <div className="rounded-xl p-3 bg-emerald-50 text-emerald-600">
+              <GraduationCap className="h-6 w-6" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">{card.title}</p>
-              <p className="text-2xl font-bold text-gray-900">{card.value}</p>
+              <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide">
+                Por Revisar
+              </p>
+              <p className="text-2xl font-bold text-gray-900">{pendingDraftsCount}</p>
             </div>
           </Link>
-        ))}
+        )}
+
+        <Link
+          to="/alerts"
+          className="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow"
+        >
+          <div className={`rounded-xl p-3 ${criticalAlertsCount > 0 ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
+            <BellRing className="h-6 w-6" />
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide">
+              Términos / Alertas
+            </p>
+            <p className="text-2xl font-bold text-gray-900">{alerts.length}</p>
+          </div>
+        </Link>
+
+        {(user?.role === 'ADMINISTRATIVO' || user?.role === 'DIRECTOR' || user?.role === 'admin') && (
+          <Link
+            to="/admissions"
+            className="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow"
+          >
+            <div className="rounded-xl p-3 bg-violet-50 text-violet-600">
+              <UserPlus className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide">
+                Turnos de Hoy
+              </p>
+              <p className="text-2xl font-bold text-gray-900">{turnosCount}</p>
+            </div>
+          </Link>
+        )}
+
+        {user?.role === 'PASANTE' && (
+          <Link
+            to="/admissions"
+            className="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm hover:shadow-md transition-shadow"
+          >
+            <div className="rounded-xl p-3 bg-violet-50 text-violet-600">
+              <UserPlus className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide">
+                Admisión y Turnos
+              </p>
+              <p className="text-sm font-bold text-gray-900">Atención Ciudadana</p>
+            </div>
+          </Link>
+        )}
       </div>
 
+      {/* Grid de 2 Columnas: Expedientes Recientes y Alertas Próximas */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {user?.role !== 'auditor' && (
-          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-gray-900">Documentos recientes</h2>
-              <Link to="/documents" className="text-sm text-indigo-600 hover:underline">
-                Ver todos
-              </Link>
-            </div>
-            {docs.length === 0 ? (
-              <div className="text-center py-8">
-                <Upload className="h-10 w-10 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-400">No hay documentos aún</p>
-                <Link to="/documents" className="mt-2 inline-block text-sm text-indigo-600 hover:underline">
-                  Subir primer documento
-                </Link>
-              </div>
-            ) : (
-              <ul className="divide-y divide-gray-100">
-                {docs.slice(0, 5).map((doc) => (
-                  <li key={doc.id} className="py-3 flex items-center justify-between">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <FileText className="h-4 w-4 text-gray-400 shrink-0" />
-                      <span className="text-sm text-gray-700 truncate">{doc.originalName}</span>
-                    </div>
-                    <span className="text-xs text-gray-400 ml-2 shrink-0">{formatBytes(doc.size)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+        {/* Expedientes Recientes */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b pb-3">
+            <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+              <FolderLock className="h-4 w-4 text-indigo-600" />
+              Expedientes Recientes
+            </h2>
+            <Link to="/cases" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+              Ver todos <ArrowRight className="h-3 w-3" />
+            </Link>
           </div>
-        )}
 
-        {(user?.role === 'admin' || user?.role === 'auditor') && (
-          <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-gray-900">Actividad reciente</h2>
-              <Link to="/audit" className="text-sm text-indigo-600 hover:underline">
-                Ver auditoría
-              </Link>
-            </div>
-            {logs.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-8">Sin actividad reciente</p>
-            ) : (
-              <ul className="divide-y divide-gray-100">
-                {logs.map((log) => (
-                  <li key={log.id} className="py-3">
-                    <p className="text-sm font-medium text-gray-700">{log.action.replace(/_/g, ' ')}</p>
-                    <p className="text-xs text-gray-400">
-                      {log.actor?.name ?? 'Sistema'} · {new Date(log.createdAt).toLocaleString()}
+          {loading ? (
+            <p className="text-xs text-gray-400 py-6 text-center">Cargando expedientes...</p>
+          ) : cases.length === 0 ? (
+            <p className="text-xs text-gray-400 py-6 text-center">No hay expedientes activos asignados.</p>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {cases.slice(0, 5).map((c) => (
+                <div
+                  key={c.id}
+                  onClick={() => navigate(`/cases/${c.id}`)}
+                  className="py-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer rounded-lg px-2 transition-colors"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-indigo-700">{c.radicado}</span>
+                      <span className="text-xs text-gray-700 font-semibold">{c.tipoCaso}</span>
+                    </div>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      {c.cliente.nombreCompleto} • Área {c.areaJuridica}
                     </p>
-                  </li>
-                ))}
-              </ul>
-            )}
+                  </div>
+                  <Badge variant="blue">{c.estado}</Badge>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Alertas Urgentes */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b pb-3">
+            <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+              <BellRing className="h-4 w-4 text-amber-600" />
+              Términos Procesales Próximos
+            </h2>
+            <Link to="/alerts" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+              Ver alertas <ArrowRight className="h-3 w-3" />
+            </Link>
           </div>
-        )}
+
+          {loading ? (
+            <p className="text-xs text-gray-400 py-6 text-center">Cargando términos...</p>
+          ) : alerts.length === 0 ? (
+            <p className="text-xs text-gray-400 py-6 text-center">Sin vencimientos procesales próximos.</p>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {alerts.slice(0, 5).map((al) => (
+                <div
+                  key={al.actuacionId}
+                  onClick={() => navigate(`/cases/${al.expedienteId}`)}
+                  className="py-3 flex items-center justify-between hover:bg-gray-50 cursor-pointer rounded-lg px-2 transition-colors"
+                >
+                  <div className="space-y-0.5">
+                    <span className="font-mono text-xs font-bold text-indigo-700">{al.radicado}</span>
+                    <p className="text-xs text-gray-800 font-medium truncate max-w-xs">{al.descripcion}</p>
+                    <p className="text-[11px] text-gray-400">
+                      Vence: {new Date(al.fechaVencimiento).toLocaleDateString()}
+                    </p>
+                  </div>
+
+                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                    al.nivelAlerta === 'VENCIDO' || al.nivelAlerta === 'ALERTA_1_DIA'
+                      ? 'bg-rose-100 text-rose-700'
+                      : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {al.diasRestantes <= 0 ? '¡Vencido!' : `${al.diasRestantes}d`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
