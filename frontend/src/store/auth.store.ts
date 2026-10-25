@@ -1,6 +1,15 @@
 import { create } from 'zustand'
 
-export type Role = 'admin' | 'user' | 'auditor'
+export type Role =
+  | 'DIRECTOR'
+  | 'DOCENTE_SUPERVISOR'
+  | 'PASANTE'
+  | 'ADMINISTRATIVO'
+  | 'CLIENTE'
+  | 'ADMIN_TI'
+  | 'admin'
+  | 'user'
+  | 'auditor'
 
 export interface AuthUser {
   id: string
