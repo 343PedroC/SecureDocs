@@ -12,6 +12,10 @@ import { StorageModule } from './storage/storage.module';
 import { DocumentsModule } from './documents/documents.module';
 import { AuditModule } from './audit/audit.module';
 import { FoldersModule } from './folders/folders.module';
+import { AdmissionsModule } from './admissions/admissions.module';
+import { CasesModule } from './cases/cases.module';
+import { LegalDraftsModule } from './legal-drafts/legal-drafts.module';
+import { ProceedingsModule } from './proceedings/proceedings.module';
 
 @Module({
   imports: [
@@ -25,6 +29,10 @@ import { FoldersModule } from './folders/folders.module';
     DocumentsModule,
     AuditModule,
     FoldersModule,
+    AdmissionsModule,
+    CasesModule,
+    LegalDraftsModule,
+    ProceedingsModule,
   ],
   controllers: [AppController],
   providers: [

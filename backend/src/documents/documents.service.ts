@@ -25,6 +25,8 @@ export class DocumentsService {
     userId: string,
     folderId?: string,
     ip?: string,
+    expedienteId?: string,
+    tipoDocumental?: any,
   ) {
     if (folderId) {
       const folder = await this.prisma.folder.findUnique({
@@ -33,6 +35,13 @@ export class DocumentsService {
       if (!folder) throw new NotFoundException('Carpeta no encontrada');
       if (folder.ownerId !== userId)
         throw new ForbiddenException('Sin acceso a esa carpeta');
+    }
+
+    if (expedienteId) {
+      const exp = await this.prisma.expediente.findUnique({
+        where: { id: expedienteId },
+      });
+      if (!exp) throw new NotFoundException('Expediente no encontrado');
     }
 
     const fileBuffer = file.buffer;
@@ -110,6 +119,8 @@ export class DocumentsService {
         encryptionIv: iv,
         encryptionAuthTag: authTag,
         folderId: folderId ?? null,
+        expedienteId: expedienteId ?? null,
+        tipoDocumental: tipoDocumental ?? 'OTRO',
       },
     });
 
@@ -141,7 +152,29 @@ export class DocumentsService {
       where: { documentId, userId, permission: { in: ['owner', 'read'] } },
     });
 
-    if (!permission) {
+    let hasAccess = Boolean(permission);
+    if (!hasAccess) {
+      const doc = await this.prisma.document.findUnique({
+        where: { id: documentId },
+        include: { expediente: true },
+      });
+      if (doc?.expediente) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (
+          user?.role === 'DIRECTOR' ||
+          user?.role === 'ADMIN_TI' ||
+          user?.role === 'admin' ||
+          user?.role === 'ADMINISTRATIVO' ||
+          doc.expediente.pasanteId === userId ||
+          doc.expediente.docenteSupervisorId === userId ||
+          (user?.role === 'DOCENTE_SUPERVISOR' && user.areaAsignada === doc.expediente.areaJuridica)
+        ) {
+          hasAccess = true;
+        }
+      }
+    }
+
+    if (!hasAccess) {
       await this.audit.log({
         actorId: userId,
         action: 'DOCUMENT_ACCESS_DENIED',
@@ -187,7 +220,29 @@ export class DocumentsService {
       where: { documentId, userId, permission: { in: ['owner', 'read'] } },
     });
 
-    if (!permission) {
+    let hasAccess = Boolean(permission);
+    if (!hasAccess) {
+      const doc = await this.prisma.document.findUnique({
+        where: { id: documentId },
+        include: { expediente: true },
+      });
+      if (doc?.expediente) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (
+          user?.role === 'DIRECTOR' ||
+          user?.role === 'ADMIN_TI' ||
+          user?.role === 'admin' ||
+          user?.role === 'ADMINISTRATIVO' ||
+          doc.expediente.pasanteId === userId ||
+          doc.expediente.docenteSupervisorId === userId ||
+          (user?.role === 'DOCENTE_SUPERVISOR' && user.areaAsignada === doc.expediente.areaJuridica)
+        ) {
+          hasAccess = true;
+        }
+      }
+    }
+
+    if (!hasAccess) {
       await this.audit.log({
         actorId: userId,
         action: 'DOCUMENT_ACCESS_DENIED',

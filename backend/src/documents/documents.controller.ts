@@ -79,6 +79,8 @@ export class DocumentsController {
       properties: {
         file: { type: 'string', format: 'binary' },
         folderId: { type: 'string' },
+        expedienteId: { type: 'string' },
+        tipoDocumental: { type: 'string' },
       },
     },
   })
@@ -88,6 +90,8 @@ export class DocumentsController {
     @CurrentUser() user: AuthUser,
     @Req() req: Request,
     @Body('folderId') folderId?: string,
+    @Body('expedienteId') expedienteId?: string,
+    @Body('tipoDocumental') tipoDocumental?: any,
   ) {
     if (!file) throw new BadRequestException('Se requiere un archivo');
     if (file.size > this.maxFileSize) {
@@ -95,7 +99,14 @@ export class DocumentsController {
         `El archivo supera el tamaño máximo permitido (${this.maxFileSize / 1024 / 1024} MB)`,
       );
     }
-    return this.documents.upload(file, user.id, folderId || undefined, req.ip);
+    return this.documents.upload(
+      file,
+      user.id,
+      folderId || undefined,
+      req.ip,
+      expedienteId || undefined,
+      tipoDocumental || undefined,
+    );
   }
 
   @Get(':id/download')
